@@ -1,0 +1,117 @@
+---
+
+- name: disable debug-shell.service
+  service: 
+    name: debug-shell
+    enabled: no
+    state: stopped
+#### с помощью модуля raw устанавливает python на сервер
+- name: Check for Python
+  raw: test -e /usr/bin/python
+  changed_when: false
+  failed_when: false
+  register: check_python
+
+- name: Installing python.
+  raw: test -e /usr/bin/apt && (sudo apt -y update && sudo apt install -y python) || (sudo yum -y install python)
+  when: check_python.rc != 0
+#### настраивать timezone
+- name: set timezone to Europe/Moscow
+  timezone:
+    name: Europe/Moscow
+#### настраивать клиент ntp
+- name: Install ntp on Ubuntu or Debian
+  apt: 
+    package: ntp
+    state: present
+  when: ansible_distribution=='Debian' or ansible_distribution=='Ubuntu'
+
+- name: Install ntp 
+  yum: 
+    package: ntp
+    state: present
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Stop ntp
+  service: 
+    name: ntp
+    state: stopped
+
+- name: Copy over the NTP configuration
+  template: 
+    src: ./template/ntp.conf.j2 
+    dest: /etc/ntp.conf
+
+- name: Make sure ntpd is started
+  service: 
+    name: ntp
+    state: started
+    enabled: yes
+#### устанавливает набор пакетов на сервер: fail2ban
+- name: Install fail2ban on Ubuntu or Debian
+  apt: 
+    package: fail2ban
+    state: present
+  when: ansible_distribution=='Debian' or ansible_distribution=='Ubuntu'
+
+- name: Install fail2ban 
+  yum: 
+    package: fail2ban
+    state: present
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: copy fail2ban local config
+  file: 
+    src: ./jail.local 
+    dest: /etc/fail2ban/
+    owner: root
+    group: root
+    mode: 0644
+#### настраивает ssh клиент
+- name: Copy over the sshd configuration
+  file: 
+    src: ./template/sshd_config
+    dest: /etc/ssh/sshd_config
+
+- name: Make sure sshd is restarted
+  service: 
+    name: sshd
+    state: restarted
+    enabled: yes
+#### настраиваем autofs - останавливаем и убираем из автозагрузки autofs с помощью systemctl
+# - name: Make sure autofs is disabled
+#   service: 
+#     name: autofs
+#     state: stopped
+#     enabled: no
+#### устанавливаем настройки grub
+- name: Disable ipv6
+  lineinfile:
+    dest: /etc/default/grub
+    line: 'GRUB_CMDLINE_LINUX="ipv6.disable=1"'
+
+- name: Enable audit
+  lineinfile:
+    dest: /etc/default/grub
+    line: 'GRUB_CMDLINE_LINUX="audit=1"'
+
+- name: Set audit backlog limit
+  lineinfile:
+    dest: /etc/default/grub
+    line: 'GRUB_CMDLINE_LINUX="audit_backlog_limit=8192"'
+#### для rpm дистрибутивов установить проверку подписей для пакетов
+- name: Enable gpgcheck with yum
+  lineinfile:
+    create: yes
+    regexp: '^gpgcheck='
+    dest: /etc/yum.conf 
+    line: 'gpgcheck=1'
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+- name: Enable gpgcheck with dnf
+  lineinfile:
+    create: yes
+    regexp: '^gpgcheck='
+    dest: /etc/dnf/dnf.conf
+    line: 'gpgcheck=1'
+  when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
