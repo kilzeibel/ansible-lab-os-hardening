@@ -1,8 +1,7 @@
 - name: ensure docker
   become: true
   hosts: all
-  gather_facts: yes
+  gather_facts: true
   roles:
-  # - prepare
-  # - docker
+  # - lemp
   - hardening

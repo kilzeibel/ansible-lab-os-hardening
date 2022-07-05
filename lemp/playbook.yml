@@ -1,0 +1,84 @@
+---
+- hosts: all
+  become: true
+  vars_files:
+    - vars/default.yml
+
+  tasks:
+    - name: Install a list of packages on Ubuntu
+      ansible.builtin.apt:
+        name: '{{ item }}'
+        state: present
+      loop:
+        - nginx
+        - mysql-server
+        - python3-pymysql
+        - php-fpm
+        - php-mysql  
+      when: ansible_distribution == 'Ubuntu'
+
+    - name: Install a list of packages on CentOS 7
+      ansible.builtin.yum:
+        name: '{{ item }}'
+        state: present
+      loop:
+      - nginx
+      - mariadb-server, mariadb, python3-PyMySQL
+      - php, php-mysqlnd, php-fpm, php-opcache, php-gd, php-xml, php-mbstring
+      when: ansible_distribution == 'CentOS'
+
+    - name: Template nginx.conf file
+      ansible.builtin.template:
+        src: "files/nginx.conf.j2"
+        dest: "/etc/nginx/sites-available/{{ http_conf }}"
+
+    - name: Add new site
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ http_conf }}"
+        dest: "/etc/nginx/sites-enabled/{{ http_conf }}"
+        state: link
+      notify: Reload Nginx service
+    
+    - name: Remove default site
+      ansible.builtin.file:
+        path: "/etc/nginx/sites-enabled/default"
+        state: absent
+      notify: Reload Nginx
+
+    - name: Set mysql password 
+      community.mysql.mysql_user: 
+        name: root 
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Remove all anonymous users
+      community.mysql.mysql_user:
+        name: ''
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Removes the MySQL test database
+      community.mysql.mysql_db: 
+        name: test 
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Sets Up PHP Info Page
+      ansible.builtin.template:
+        src: "files/info.php.j2"
+        dest: "/var/www/html/info.php"
+
+    - name: Start Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Reload Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
